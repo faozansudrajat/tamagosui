@@ -1,56 +1,55 @@
-import {
-  useCurrentAccount,
-  useSuiClient,
-  useSignAndExecuteTransaction,
-} from "@mysten/dapp-kit";
-import { Transaction } from "@mysten/sui/transactions";
+import { useSignAndExecuteTransaction } from "@mysten/dapp-kit";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { Transaction } from "@mysten/sui/transactions";
 
-import { queryKeyOwnedPet } from "./useQueryOwnedPet";
 import { CLOCK_ID, MODULE_NAME, PACKAGE_ID } from "@/constants/contract";
+import { queryKeyUserPets } from "./useQueryUserPets";
 
-const mutationKeyAdoptPet = ["mutate", "adopt-pet"];
-
-type UseMutateAdoptPetParams = {
+type AdoptPetParams = {
   name: string;
+  capsuleId?: string;
 };
 
 export function useMutateAdoptPet() {
-  const currentAccount = useCurrentAccount();
-  const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
-  const suiClient = useSuiClient();
   const queryClient = useQueryClient();
+  const { mutateAsync: signAndExecuteTransaction } =
+    useSignAndExecuteTransaction();
 
   return useMutation({
-    mutationKey: mutationKeyAdoptPet,
-    mutationFn: async ({ name }: UseMutateAdoptPetParams) => {
-      if (!currentAccount) throw new Error("No connected account");
-
+    mutationFn: async ({ name, capsuleId }: AdoptPetParams) => {
       const tx = new Transaction();
-      tx.moveCall({
-        target: `${PACKAGE_ID}::${MODULE_NAME}::adopt_pet`,
-        arguments: [tx.pure.string(name), tx.object(CLOCK_ID)],
+
+      if (capsuleId) {
+        // Alur untuk adopsi Pet KEDUA dan seterusnya (Tidak berubah)
+        tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::adopt_pet`,
+          arguments: [
+            tx.object(capsuleId),
+            tx.pure.string(name),
+            tx.object(CLOCK_ID),
+          ],
+        });
+      } else {
+        // Alur untuk adopsi Pet PERTAMA (Sekarang sudah SINKRON)
+        // Kita memanggil satu fungsi yang sudah diperbaiki di smart contract.
+        tx.moveCall({
+          target: `${PACKAGE_ID}::${MODULE_NAME}::create_pet_owner_capsule`,
+          arguments: [
+            tx.pure.string(name), // <-- Argumen pertama: name
+            tx.object(CLOCK_ID), // <-- Argumen kedua: clock
+          ],
+        });
+      }
+
+      return signAndExecuteTransaction({
+        transaction: tx,
+        chain: "sui:testnet",
       });
-
-      const result = await signAndExecute({ transaction: tx });
-      const response = await suiClient.waitForTransaction({
-        digest: result.digest,
-        options: { showEvents: true, showEffects: true },
+    },
+    onSuccess: () => {
+      return queryClient.invalidateQueries({
+        queryKey: queryKeyUserPets(),
       });
-
-      if (response?.effects?.status.status === "failure")
-        throw new Error(response.effects.status.error);
-
-      return response;
-    },
-    onSuccess: (response) => {
-      toast.success(`Pet adopted successfully! Tx: ${response.digest}`);
-      queryClient.invalidateQueries({ queryKey: queryKeyOwnedPet() });
-    },
-    onError: (error) => {
-      console.error("Error adopting pet:", error);
-      toast.error(`Error adopting pet: ${error.message}`);
     },
   });
 }

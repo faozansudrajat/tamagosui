@@ -1,55 +1,53 @@
 import {
   useCurrentAccount,
-  useSuiClient,
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { queryKeyOwnedPet } from "./useQueryOwnedPet";
 import { CLOCK_ID, MODULE_NAME, PACKAGE_ID } from "@/constants/contract";
+import { queryKeyUserPets } from "./useQueryUserPets";
 
-const mutateKeyLetPetSleep = ["mutate", "let-pet-sleep"];
+const mutationKeyLetPetSleep = ["mutate", "let-pet-sleep"];
 
+// 1. UBAH PARAMETER
 type UseMutateLetPetSleepParams = {
+  capsuleId: string;
   petId: string;
 };
 
 export function useMutateLetPetSleep() {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
-  const suiClient = useSuiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: mutateKeyLetPetSleep,
-    mutationFn: async ({ petId }: UseMutateLetPetSleepParams) => {
+    mutationKey: mutationKeyLetPetSleep,
+    mutationFn: async ({ capsuleId, petId }: UseMutateLetPetSleepParams) => {
       if (!currentAccount) throw new Error("No connected account");
 
       const tx = new Transaction();
       tx.moveCall({
         target: `${PACKAGE_ID}::${MODULE_NAME}::let_pet_sleep`,
-        arguments: [tx.object(petId), tx.object(CLOCK_ID)],
+        // 2. PERBARUI ARGUMEN (INGAT CLOCK_ID)
+        arguments: [
+          tx.object(capsuleId),
+          tx.object(petId),
+          tx.object(CLOCK_ID),
+        ],
       });
 
-      const { digest } = await signAndExecute({ transaction: tx });
-      const response = await suiClient.waitForTransaction({
-        digest,
-        options: { showEffects: true },
-      });
-      if (response?.effects?.status.status === "failure")
-        throw new Error(response.effects.status.error);
-
-      return response;
+      return signAndExecute({ transaction: tx });
     },
     onSuccess: (response) => {
-      toast.success(`Your pet is now sleeping! Tx: ${response.digest}`);
-      queryClient.invalidateQueries({ queryKey: queryKeyOwnedPet() });
+      toast.info(`Zzz... Your pet is now sleeping. Tx: ${response.digest}`);
+      // 3. PERBARUI INVALIDASI QUERY
+      queryClient.invalidateQueries({ queryKey: queryKeyUserPets() });
     },
     onError: (error) => {
-      toast.error(`Failed to let your pet sleep: ${error.message}`);
       console.error("Error letting pet sleep:", error);
+      toast.error(`Error letting pet sleep: ${error.message}`);
     },
   });
 }

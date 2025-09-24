@@ -1,55 +1,53 @@
 import {
   useCurrentAccount,
-  useSuiClient,
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { queryKeyOwnedPet } from "./useQueryOwnedPet";
 import { CLOCK_ID, MODULE_NAME, PACKAGE_ID } from "@/constants/contract";
+import { queryKeyUserPets } from "./useQueryUserPets";
 
-const mutateKeyWakeUpPet = ["mutate", "let-pet-sleep"];
+const mutationKeyWakeUpPet = ["mutate", "wake-up-pet"];
 
-type UseMutateWakeUpPet = {
+// 1. UBAH PARAMETER
+type UseMutateWakeUpPetParams = {
+  capsuleId: string;
   petId: string;
 };
 
 export function useMutateWakeUpPet() {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
-  const suiClient = useSuiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: mutateKeyWakeUpPet,
-    mutationFn: async ({ petId }: UseMutateWakeUpPet) => {
+    mutationKey: mutationKeyWakeUpPet,
+    mutationFn: async ({ capsuleId, petId }: UseMutateWakeUpPetParams) => {
       if (!currentAccount) throw new Error("No connected account");
 
       const tx = new Transaction();
       tx.moveCall({
         target: `${PACKAGE_ID}::${MODULE_NAME}::wake_up_pet`,
-        arguments: [tx.object(petId), tx.object(CLOCK_ID)],
+        // 2. PERBARUI ARGUMEN (INGAT CLOCK_ID)
+        arguments: [
+          tx.object(capsuleId),
+          tx.object(petId),
+          tx.object(CLOCK_ID),
+        ],
       });
 
-      const { digest } = await signAndExecute({ transaction: tx });
-      const response = await suiClient.waitForTransaction({
-        digest,
-        options: { showEffects: true },
-      });
-      if (response?.effects?.status.status === "failure")
-        throw new Error(response.effects.status.error);
-
-      return response;
+      return signAndExecute({ transaction: tx });
     },
     onSuccess: (response) => {
-      toast.success(`Your pet has woken up! Tx: ${response.digest}`);
-      queryClient.invalidateQueries({ queryKey: queryKeyOwnedPet() });
+      toast.success(`Good morning! Your pet is awake. Tx: ${response.digest}`);
+      // 3. PERBARUI INVALIDASI QUERY
+      queryClient.invalidateQueries({ queryKey: queryKeyUserPets() });
     },
     onError: (error) => {
-      toast.error(`Failed to wake up pet: ${error}`);
-      console.error("Failed to wake up pet:", error);
+      console.error("Error waking up pet:", error);
+      toast.error(`Error waking up pet: ${error.message}`);
     },
   });
 }

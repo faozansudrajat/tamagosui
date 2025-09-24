@@ -1,52 +1,48 @@
 import {
   useCurrentAccount,
-  useSuiClient,
   useSignAndExecuteTransaction,
 } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { queryKeyOwnedPet } from "./useQueryOwnedPet";
 import { MODULE_NAME, PACKAGE_ID } from "@/constants/contract";
+import { queryKeyUserPets } from "./useQueryUserPets"; // <-- IMPORT BARU
 
-const mutateKeyFeedPet = ["mutate", "feed-pet"];
+const mutationKeyFeedPet = ["mutate", "feed-pet"];
 
+// --- PARAMETER BARU ---
 type UseMutateFeedPetParams = {
+  capsuleId: string;
   petId: string;
 };
 
 export function useMutateFeedPet() {
   const currentAccount = useCurrentAccount();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
-  const suiClient = useSuiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: mutateKeyFeedPet,
-    mutationFn: async ({ petId }: UseMutateFeedPetParams) => {
+    mutationKey: mutationKeyFeedPet,
+    mutationFn: async ({ capsuleId, petId }: UseMutateFeedPetParams) => {
       if (!currentAccount) throw new Error("No connected account");
 
       const tx = new Transaction();
       tx.moveCall({
         target: `${PACKAGE_ID}::${MODULE_NAME}::feed_pet`,
-        arguments: [tx.object(petId)],
+        arguments: [
+          // --- ARGUMEN BARU SESUAI SMART CONTRACT ---
+          tx.object(capsuleId), // 1. Objek Kapsul
+          tx.object(petId), // 2. Objek Pet
+        ],
       });
 
-      const { digest } = await signAndExecute({ transaction: tx });
-      const response = await suiClient.waitForTransaction({
-        digest,
-        options: { showEffects: true, showEvents: true },
-      });
-      if (response?.effects?.status.status === "failure")
-        throw new Error(response.effects.status.error);
-
-      return response;
+      return signAndExecute({ transaction: tx });
     },
     onSuccess: (response) => {
-      toast.success(`Pet fed successfully! Tx: ${response.digest}`);
-
-      queryClient.invalidateQueries({ queryKey: queryKeyOwnedPet() });
+      toast.success(`Fed your pet successfully! Tx: ${response.digest}`);
+      // --- INVALIDASI QUERY BARU ---
+      queryClient.invalidateQueries({ queryKey: queryKeyUserPets() });
     },
     onError: (error) => {
       console.error("Error feeding pet:", error);

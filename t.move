@@ -1,7 +1,7 @@
 module 0x0::tamagosui;
 
 use std::string::{Self, String};
-use sui::{clock::Clock, display, dynamic_field, event, package};
+use sui::{object::{Self, ID, UID}, transfer, clock::Clock, display, dynamic_field, event, package, tx_context::TxContext};
 
 // === Errors ===
 const E_NOT_ENOUGH_COINS: u64 = 101;
@@ -30,69 +30,51 @@ const SLEEP_STARTED_AT_KEY: vector<u8> = b"sleep_started_at";
 // === Game Balance ===
 public struct GameBalance has copy, drop {
     max_stat: u8,
-    
-    // Feed settings
     feed_coins_cost: u64,
     feed_experience_gain: u64,
     feed_hunger_gain: u8,
-    
-    // Play settings
     play_energy_loss: u8,
     play_hunger_loss: u8,
     play_experience_gain: u64,
     play_happiness_gain: u8,
-    
-    // Work settings
     work_energy_loss: u8,
     work_happiness_loss: u8,
     work_hunger_loss: u8,
     work_coins_gain: u64,
     work_experience_gain: u64,
-    
-    // Sleep settings (in milliseconds)
     sleep_energy_gain_ms: u64,
     sleep_happiness_loss_ms: u64,
     sleep_hunger_loss_ms: u64,
-
-    // Level settings
     exp_per_level: u64,
 }
 
 fun get_game_balance(): GameBalance {
     GameBalance {
         max_stat: 100,
-        
-        // Feed
         feed_coins_cost: 5,
         feed_experience_gain: 5,
         feed_hunger_gain: 20,
-        
-        // Play
         play_energy_loss: 15,
         play_hunger_loss: 15,
         play_experience_gain: 10,
         play_happiness_gain: 25,
-        
-        // Work
         work_energy_loss: 20,
         work_hunger_loss: 20,
         work_happiness_loss: 20,
         work_coins_gain: 10,
         work_experience_gain: 15,
-
-        // Sleep (rates per millisecond)
-        sleep_energy_gain_ms: 1000,    // 1 energy per second
-        sleep_happiness_loss_ms: 700, // 1 happiness loss per 0.7 seconds
-        sleep_hunger_loss_ms: 500,    // 1 hunger loss per 0.5 seconds
-        
-        // Level
+        sleep_energy_gain_ms: 1000,
+        sleep_happiness_loss_ms: 700,
+        sleep_hunger_loss_ms: 500,
         exp_per_level: 100,
     }
 }
 
 public struct TAMAGOSUI has drop {}
 
-public struct Pet has key, store {
+// DIUBAH: Pet tidak lagi memiliki `key` karena sekarang akan 'dimiliki'
+// oleh PetOwnerCapsule, bukan oleh user secara langsung.
+public struct Pet has store {
     id: UID,
     name: String,
     image_url: String,
@@ -115,13 +97,13 @@ public struct PetAccessory has key, store {
     image_url: String
 }
 
-public struct PetStats has store, drop {
+public struct PetStats has store {
     energy: u8,
     happiness: u8,
     hunger: u8,
 }
 
-public struct PetGameData has store, drop {
+public struct PetGameData has store {
     coins: u64,
     experience: u64,
     level: u8,
@@ -150,6 +132,7 @@ public struct PetBurned has copy, drop {
 fun init(witness: TAMAGOSUI, ctx: &mut TxContext) {
     let publisher = package::claim(witness, ctx);
 
+    // ... (sisanya tidak berubah)
     let pet_keys = vector[
         string::utf8(b"name"),
         string::utf8(b"image_url"),
@@ -187,20 +170,11 @@ fun init(witness: TAMAGOSUI, ctx: &mut TxContext) {
 
 // TAMBAHAN: Fungsi entry point baru untuk membuat "kapsul"
 // bagi user baru. Ini hanya perlu dipanggil sekali per user.
-public entry fun create_pet_owner_capsule(
-    name: String,
-    clock: &Clock,
-    ctx: &mut TxContext
-) {
-    let mut capsule = PetOwnerCapsule {
+public entry fun create_pet_owner_capsule(ctx: &mut TxContext) {
+    let capsule = PetOwnerCapsule {
         id: object::new(ctx),
-        pet_count: 0 // pet_count akan diupdate oleh adopt_pet
+        pet_count: 0
     };
-
-    // Panggil adopt_pet secara internal untuk menambahkan Pet pertama
-    adopt_pet(&mut capsule, name, clock, ctx);
-
-    // Transfer kapsul yang sudah berisi satu Pet ke pengguna
     transfer::public_transfer(capsule, ctx.sender());
 }
 
@@ -242,10 +216,9 @@ public entry fun adopt_pet(
         name: pet.name,
         adopted_at: pet.adopted_at
     });
-    
+
     // DIUBAH: Pet tidak lagi ditransfer ke user,
     // tapi ditambahkan sebagai dynamic field ke dalam capsule.
-    // Kita menggunakan ID dari Pet sebagai key-nya.
     dynamic_field::add(&mut capsule.id, pet_id, pet);
     capsule.pet_count = capsule.pet_count + 1;
 }
@@ -286,7 +259,9 @@ public entry fun feed_pet(capsule: &mut PetOwnerCapsule, pet_id: ID) {
     emit_action(pet, b"fed");
 }
 
-public entry fun play_with_pet(pet: &mut Pet) {
+public entry fun play_with_pet(capsule: &mut PetOwnerCapsule, pet_id: ID) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
 
     let gb = get_game_balance();
@@ -304,7 +279,9 @@ public entry fun play_with_pet(pet: &mut Pet) {
     emit_action(pet, b"played");
 }
 
-public entry fun work_for_coins(pet: &mut Pet) {
+public entry fun work_for_coins(capsule: &mut PetOwnerCapsule, pet_id: ID) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
 
     let gb = get_game_balance();
@@ -331,7 +308,9 @@ public entry fun work_for_coins(pet: &mut Pet) {
     emit_action(pet, b"worked");
 }
 
-public entry fun let_pet_sleep(pet: &mut Pet, clock: &Clock) {
+public entry fun let_pet_sleep(capsule: &mut PetOwnerCapsule, pet_id: ID, clock: &Clock) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ALREADY_ASLEEP);
 
     let key = string::utf8(SLEEP_STARTED_AT_KEY);
@@ -342,7 +321,9 @@ public entry fun let_pet_sleep(pet: &mut Pet, clock: &Clock) {
     emit_action(pet, b"started_sleeping");
 }
 
-public entry fun wake_up_pet(pet: &mut Pet, clock: &Clock) {
+public entry fun wake_up_pet(capsule: &mut PetOwnerCapsule, pet_id: ID, clock: &Clock) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(is_sleeping(pet), E_PET_IS_ASLEEP);
     
     let key = string::utf8(SLEEP_STARTED_AT_KEY);
@@ -353,30 +334,17 @@ public entry fun wake_up_pet(pet: &mut Pet, clock: &Clock) {
 
     // Calculate energy gained
     let energy_gained_u64 = duration_ms / gb.sleep_energy_gain_ms;
-    // Cap energy gain to max_stat
-    let energy_gained = if (energy_gained_u64 > (gb.max_stat as u64)) {
-        gb.max_stat 
-    } else {
-        (energy_gained_u64 as u8)
-    };
+    let energy_gained = if (energy_gained_u64 > (gb.max_stat as u64)) gb.max_stat else (energy_gained_u64 as u8);
     pet.stats.energy = if (pet.stats.energy + energy_gained > gb.max_stat) gb.max_stat else pet.stats.energy + energy_gained;
 
     // Calculate happiness lost
     let happiness_lost_u64 = duration_ms / gb.sleep_happiness_loss_ms;
-    let happiness_lost = if (happiness_lost_u64 > (gb.max_stat as u64)) {
-        gb.max_stat
-    } else {
-        (happiness_lost_u64 as u8)
-    };
+    let happiness_lost = if (happiness_lost_u64 > (gb.max_stat as u64)) gb.max_stat else (happiness_lost_u64 as u8);
     pet.stats.happiness = if (pet.stats.happiness > happiness_lost) pet.stats.happiness - happiness_lost else 0;
 
     // Calculate hunger lost
     let hunger_lost_u64 = duration_ms / gb.sleep_hunger_loss_ms;
-    let hunger_lost = if (hunger_lost_u64 > (gb.max_stat as u64)) {
-        gb.max_stat
-    } else {
-        (hunger_lost_u64 as u8)
-    };
+    let hunger_lost = if (hunger_lost_u64 > (gb.max_stat as u64)) gb.max_stat else (hunger_lost_u64 as u8);
     pet.stats.hunger = if (pet.stats.hunger > hunger_lost) pet.stats.hunger - hunger_lost else 0;
 
     update_pet_image(pet);
@@ -385,20 +353,19 @@ public entry fun wake_up_pet(pet: &mut Pet, clock: &Clock) {
 }
 
 
-public entry fun check_and_level_up(pet: &mut Pet) {
+public entry fun check_and_level_up(capsule: &mut PetOwnerCapsule, pet_id: ID) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
 
     let gb = get_game_balance();
 
-    // Calculate required exp: level * exp_per_level
     let required_exp = (pet.game_data.level as u64) * gb.exp_per_level;
     assert!(pet.game_data.experience >= required_exp, E_NOT_ENOUGH_EXP);
 
-    // Level up
     pet.game_data.level = pet.game_data.level + 1;
     pet.game_data.experience = pet.game_data.experience - required_exp;
     
-    // Update image based on level and equipped accessory
     update_pet_image(pet);
 
     emit_action(pet, b"leveled_up")
@@ -413,28 +380,28 @@ public entry fun mint_accessory(ctx: &mut TxContext) {
     transfer::public_transfer(accessory, ctx.sender());
 }
 
-public entry fun equip_accessory(pet: &mut Pet, accessory: PetAccessory) {
+public entry fun equip_accessory(capsule: &mut PetOwnerCapsule, pet_id: ID, accessory: PetAccessory) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
 
     let key = string::utf8(EQUIPPED_ITEM_KEY);
     assert!(!dynamic_field::exists_<String>(&pet.id, copy key), E_ITEM_ALREADY_EQUIPPED);
 
-    // Add accessory to pet
     dynamic_field::add(&mut pet.id, key, accessory);
-    // Update image
     update_pet_image(pet);
     emit_action(pet, b"equipped_item");
 }
 
-public entry fun unequip_accessory(pet: &mut Pet, ctx: &mut TxContext) {
+public entry fun unequip_accessory(capsule: &mut PetOwnerCapsule, pet_id: ID, ctx: &mut TxContext) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
 
     let key = string::utf8(EQUIPPED_ITEM_KEY);
     assert!(dynamic_field::exists_<String>(&pet.id, key), E_NO_ITEM_EQUIPPED);
 
-    // Remove accessory
     let accessory: PetAccessory = dynamic_field::remove<String, PetAccessory>(&mut pet.id, key);
-    // Update image
     update_pet_image(pet);
 
     transfer::transfer(accessory, ctx.sender());
@@ -478,6 +445,9 @@ fun update_pet_image(pet: &mut Pet) {
 }
 
 // === View Functions ===
+// Catatan: View functions ini masih bisa berfungsi jika Anda memiliki objek Pet
+// secara terpisah. Namun, dalam konteks dApp, Anda kemungkinan besar akan
+// mengambil data Pet dari dynamic fields di PetOwnerCapsule.
 public fun get_pet_name(pet: &Pet): String { pet.name }
 public fun get_pet_adopted_at(pet: &Pet): u64 { pet.adopted_at }
 public fun get_pet_coins(pet: &Pet): u64 { pet.game_data.coins }

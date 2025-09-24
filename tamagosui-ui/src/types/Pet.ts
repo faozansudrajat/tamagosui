@@ -1,3 +1,16 @@
+// TAMBAHAN: Tipe untuk "kapsul" yang dimiliki oleh user.
+// Ini adalah tipe "bersih" yang akan kita gunakan di seluruh aplikasi.
+export type PetOwnerCapsule = {
+  id: string;
+  petCount: number; // Menggunakan camelCase untuk konsistensi di JS/TS
+};
+
+// TAMBAHAN: Tipe untuk data mentah dari RPC call untuk PetOwnerCapsule.
+export type RawPetOwnerCapsule = {
+  id: { id: string };
+  pet_count: string; // RPC biasanya mengembalikan u64 sebagai string
+};
+
 type PetStructGameData = {
   coins: number;
   experience: number;
