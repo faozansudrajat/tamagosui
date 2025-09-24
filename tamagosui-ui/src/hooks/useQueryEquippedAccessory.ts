@@ -4,7 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { getSuiObjectFields } from "@/lib/utils";
 import type { SuiWrappedDynamicField, PetAccessoryStruct } from "@/types/Pet";
 
-export const queryKeyEquippedAccessory = ["owned-equipped-accessory"];
+// SOLUSI JANGKA PANJANG 2: Ubah menjadi fungsi agar cache bisa per-pet
+export const queryKeyEquippedAccessory = ({ petId }: { petId: string }) => [
+  "equipped-accessory",
+  petId,
+];
 
 type UseQueryEquippedAccessoryParams = {
   petId?: string;
@@ -16,7 +20,8 @@ export function useQueryEquippedAccessory({
   const suiClient = useSuiClient();
 
   return useQuery({
-    queryKey: queryKeyEquippedAccessory,
+    // Gunakan fungsi untuk membuat key yang dinamis
+    queryKey: queryKeyEquippedAccessory({ petId: petId ?? "" }),
     queryFn: async () => {
       if (!petId) return;
 
@@ -26,7 +31,7 @@ export function useQueryEquippedAccessory({
       const accessoryField = dynamicFields.data.find(
         (field) =>
           field.name.type === "0x1::string::String" &&
-          field.name.value === "equipped_item",
+          field.name.value === "equipped_item"
       );
 
       if (!accessoryField) return null;
@@ -38,14 +43,12 @@ export function useQueryEquippedAccessory({
 
       const wrappedField =
         getSuiObjectFields<SuiWrappedDynamicField<PetAccessoryStruct>>(
-          fieldObjectResponse,
+          fieldObjectResponse
         );
 
-      // Return the fields of the accessory if it exists
       if (wrappedField && wrappedField.value && wrappedField.value.fields)
         return wrappedField.value.fields;
 
-      // If the pet has no accessory equipped, return null
       return null;
     },
     enabled: !!petId,

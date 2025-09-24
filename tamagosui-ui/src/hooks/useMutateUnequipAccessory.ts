@@ -8,11 +8,13 @@ import { toast } from "sonner";
 
 import { MODULE_NAME, PACKAGE_ID } from "@/constants/contract";
 import { queryKeyUserPets } from "./useQueryUserPets";
+import { queryKeyEquippedAccessory } from "./useQueryEquippedAccessory";
+import { queryKeyPetWardrobe } from "./useQueryPetWardrobe";
 
-const mutationKeyUnequipAccessory = ["mutate", "unequip-accessory"];
+const mutationKey = ["mutate", "unequip-accessory"];
 
-// 1. UBAH PARAMETER
-type UseMutateUnequipAccessoryParams = {
+// PERBAIKAN: Parameter tidak lagi memerlukan info spesifik item
+type UnequipAccessoryParams = {
   capsuleId: string;
   petId: string;
 };
@@ -23,30 +25,31 @@ export function useMutateUnequipAccessory() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: mutationKeyUnequipAccessory,
-    mutationFn: async ({
-      capsuleId,
-      petId,
-    }: UseMutateUnequipAccessoryParams) => {
-      if (!currentAccount) throw new Error("No connected account");
-
+    mutationKey: mutationKey,
+    mutationFn: async ({ capsuleId, petId }: UnequipAccessoryParams) => {
       const tx = new Transaction();
       tx.moveCall({
         target: `${PACKAGE_ID}::${MODULE_NAME}::unequip_accessory`,
-        // 2. PERBARUI ARGUMEN
+        // PERBAIKAN: Hanya kirim capsuleId dan petId
         arguments: [tx.object(capsuleId), tx.object(petId)],
       });
-
       return signAndExecute({ transaction: tx });
     },
-    onSuccess: (response) => {
-      toast.success(`Accessory unequipped! Tx: ${response.digest}`);
-      // 3. PERBARUI INVALIDASI QUERY
-      queryClient.invalidateQueries({ queryKey: queryKeyUserPets() });
+    onSuccess: (data, variables) => {
+      toast.success("Accessory unequipped!");
+      // Invalidate semua query yang relevan
+      queryClient.invalidateQueries({
+        queryKey: queryKeyUserPets(currentAccount?.address),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeyEquippedAccessory({ petId: variables.petId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeyPetWardrobe({ petId: variables.petId }),
+      });
     },
     onError: (error) => {
-      console.error("Error unequipping accessory:", error);
-      toast.error(`Error unequipping accessory: ${error.message}`);
+      toast.error("Failed to unequip accessory: " + error.message);
     },
   });
 }
