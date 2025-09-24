@@ -21,7 +21,7 @@ type AdoptComponentProps = {
 };
 
 const INITIAL_PET_IMAGE_URL =
-  "https://raw.githubusercontent.com/xfajarr/stacklend/refs/heads/main/photo_2023-04-30_12-46-11.jpg";
+  "https://tan-kind-lizard-741.mypinata.cloud/ipfs/bafkreidkhjpthergw2tcg6u5r344shgi2cdg5afmhgpf5bv34vqfrr7hni";
 
 export default function AdoptComponent({
   isFirstPet,
