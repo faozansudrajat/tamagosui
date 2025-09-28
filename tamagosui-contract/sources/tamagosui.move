@@ -65,40 +65,6 @@ public struct GameBalance has copy, drop {
     exp_per_level: u64,
 }
 
-fun get_game_balance(): GameBalance {
-    GameBalance {
-        max_stat: 100,
-
-        // Feed
-        feed_coins_cost: 5,
-        feed_experience_gain: 5,
-        feed_hunger_gain: 20,
-
-        // Play
-        play_energy_loss: 15,
-        play_hunger_loss: 15,
-        play_experience_gain: 10,
-        play_happiness_gain: 25,
-
-        // Work
-        work_energy_loss: 20,
-        work_hunger_loss: 20,
-        work_happiness_loss: 20,
-        work_coins_gain: 10,
-        work_experience_gain: 15,
-
-        // Sleep (rates per millisecond)
-        sleep_energy_gain_ms: 1000,   // 1 energy per second
-        sleep_happiness_loss_ms: 700, // 1 happiness loss per 0.7 seconds
-        sleep_hunger_loss_ms: 500,    // 1 hunger loss per 0.5 seconds
-
-        // Level
-        exp_per_level: 100,
-    }
-}
-
-public struct TAMAGOSUI has drop {}
-
 public struct Pet has key, store {
     id: UID,
     name: String,
@@ -135,6 +101,40 @@ public struct PetGameData has store, drop {
 public struct PetAdopted has copy, drop { pet_id: ID, name: String, adopted_at: u64 }
 public struct PetAction has copy, drop { pet_id: ID, action: String, energy: u8, happiness: u8, hunger: u8 }
 public struct PetBurned has copy, drop { pet_id: ID }
+
+fun get_game_balance(): GameBalance {
+    GameBalance {
+        max_stat: 100,
+
+        // Feed
+        feed_coins_cost: 5,
+        feed_experience_gain: 5,
+        feed_hunger_gain: 20,
+
+        // Play
+        play_energy_loss: 15,
+        play_hunger_loss: 15,
+        play_experience_gain: 10,
+        play_happiness_gain: 25,
+
+        // Work
+        work_energy_loss: 20,
+        work_hunger_loss: 20,
+        work_happiness_loss: 20,
+        work_coins_gain: 10,
+        work_experience_gain: 15,
+
+        // Sleep (rates per millisecond)
+        sleep_energy_gain_ms: 1000,   // 1 energy per second
+        sleep_happiness_loss_ms: 700, // 1 happiness loss per 0.7 seconds
+        sleep_hunger_loss_ms: 500,    // 1 hunger loss per 0.5 seconds
+
+        // Level
+        exp_per_level: 100,
+    }
+}
+
+public struct TAMAGOSUI has drop {}
 
 fun init(witness: TAMAGOSUI, ctx: &mut TxContext) {
     let publisher = package::claim(witness, ctx);

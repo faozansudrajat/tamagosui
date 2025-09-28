@@ -92,8 +92,8 @@ export default function HomePage() {
   const renderContent = () => {
     if (isUserPetsLoading) {
       return (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center p-8 border-4 border-primary bg-background shadow-[8px_8px_0px_#000]">
+        <div className="flex h-full items-center justify-center">
+          <div className="border-primary bg-background border-4 p-8 text-center shadow-[8px_8px_0px_#000]">
             <h2 className="text-4xl uppercase">Loading Your Pets...</h2>
           </div>
         </div>
@@ -102,14 +102,14 @@ export default function HomePage() {
 
     if (!capsule) {
       return (
-        <div className="flex items-center justify-center h-full">
+        <div className="flex h-full items-center justify-center">
           <AdoptComponent isFirstPet={true} onAdopted={() => {}} />
         </div>
       );
     }
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8 w-full max-w-6xl">
+      <div className="grid w-full max-w-6xl grid-cols-1 gap-8 md:grid-cols-4">
         <div className="md:col-span-1">
           <PetSidebar
             pets={pets}
@@ -127,7 +127,7 @@ export default function HomePage() {
               isBurningPet={isBurning}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-center p-8 border-4 border-dashed border-primary/50 bg-background/50 rounded-lg">
+            <div className="border-primary/50 bg-background/50 flex h-full items-center justify-center rounded-lg border-4 border-dashed p-8 text-center">
               <p className="text-xl text-gray-500">
                 Select a pet from the left, <br /> or adopt a new one!
               </p>
@@ -139,11 +139,11 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-secondary">
+    <div className="bg-secondary flex min-h-screen flex-col">
       <Header />
-      <main className="flex-grow flex items-center justify-center p-4 md:p-8 pt-10 md:pt-10">
+      <main className="flex flex-grow items-center justify-center p-4 pt-10 md:p-8 md:pt-10">
         {!currentAccount ? (
-          <div className="text-center p-8 border-4 border-primary bg-background shadow-[8px_8px_0px_#000]">
+          <div className="border-primary bg-background border-4 p-8 text-center shadow-[8px_8px_0px_#000]">
             <h2 className="text-4xl uppercase">Please Connect Wallet</h2>
           </div>
         ) : (
@@ -153,7 +153,7 @@ export default function HomePage() {
       <Dialog open={isAdopting} onOpenChange={setIsAdopting}>
         <DialogContent className="w-full max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className="text-3xl text-center">
+            <DialogTitle className="text-center text-3xl">
               Adopt a New Pet
             </DialogTitle>
             <DialogDescription className="text-center">
