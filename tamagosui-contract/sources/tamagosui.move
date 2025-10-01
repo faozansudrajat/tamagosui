@@ -137,8 +137,11 @@ fun get_game_balance(): GameBalance {
 public struct TAMAGOSUI has drop {}
 
 fun init(witness: TAMAGOSUI, ctx: &mut TxContext) {
+    // Claim Publisher
     let publisher = package::claim(witness, ctx);
 
+    // Setup Display Metadata for PET NFT
+    // This Display Metadata informs Sui wallets and explorers which fields to display.
     let pet_keys = vector[
         string::utf8(b"name"),
         string::utf8(b"image_url"),
@@ -153,10 +156,13 @@ fun init(witness: TAMAGOSUI, ctx: &mut TxContext) {
         string::utf8(b"{game_data.experience}"),
         string::utf8(b"{game_data.level}"),
     ];
+    // Create the new Display object for the Pet struct, authorized by the Publisher.
     let mut pet_display = display::new_with_fields<Pet>(&publisher, pet_keys, pet_values, ctx);
     pet_display.update_version();
     transfer::public_transfer(pet_display, ctx.sender());
 
+    // Setup Display Metadata for PET Accessory NFT
+    // This Display Metadata informs Sui wallets and explorers which fields to display.
     let accessory_keys = vector[
         string::utf8(b"name"),
         string::utf8(b"image_url")
@@ -165,15 +171,23 @@ fun init(witness: TAMAGOSUI, ctx: &mut TxContext) {
         string::utf8(b"{name}"),
         string::utf8(b"{image_url}")
     ];
+    // Create the new Display object for the PetAccessory struct, authorized by the Publisher.
     let mut accessory_display = display::new_with_fields<PetAccessory>(&publisher, accessory_keys, accessory_values, ctx);
     accessory_display.update_version();
     transfer::public_transfer(accessory_display, ctx.sender());
-
+    
+    // Transfer the Publisher object to the deployer's address.
+    // This must be the final administrative step, as the Publisher was needed (by reference: &publisher) 
+    // to authorize the creation of all Display Metadata objects before being moved out of the function scope.
     transfer::public_transfer(publisher, ctx.sender());
 }
 
 entry fun create_pet_owner_capsule(name: String, clock: &Clock, ctx: &mut TxContext) {
-    let mut capsule = PetOwnerCapsule { id: object::new(ctx), pet_count: 0 };
+    let mut capsule = PetOwnerCapsule {
+        id: object::new(ctx),
+        pet_count: 0
+    };
+
     adopt_pet(&mut capsule, name, clock, ctx);
     transfer::public_transfer(capsule, ctx.sender());
 }
@@ -182,10 +196,16 @@ entry fun adopt_pet(capsule: &mut PetOwnerCapsule, name: String, clock: &Clock, 
     let current_time = clock::timestamp_ms(clock);
     let pet_stats = PetStats { energy: 60, happiness: 50, hunger: 40 };
     let pet_game_data = PetGameData { coins: 100, experience: 0, level: 1 };
+
     let pet = Pet {
-        id: object::new(ctx), name, image_url: string::utf8(PET_LEVEL_1_IMAGE_URL),
-        adopted_at: current_time, stats: pet_stats, game_data: pet_game_data
+        id: object::new(ctx),
+        name,
+        image_url: string::utf8(PET_LEVEL_1_IMAGE_URL),
+        adopted_at: current_time,
+        stats: pet_stats,
+        game_data: pet_game_data
     };
+
     let pet_id = object::id(&pet);
     event::emit(PetAdopted { pet_id, name: pet.name, adopted_at: pet.adopted_at });
     dynamic_field::add(&mut capsule.id, pet_id, pet);
@@ -200,22 +220,135 @@ entry fun burn_pet(capsule: &mut PetOwnerCapsule, pet_id: ID) {
     event::emit(PetBurned { pet_id });
 }
 
+// === Game Activity Functions ===
+entry fun feed_pet(capsule: &mut PetOwnerCapsule, pet_id: ID) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+    
+    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
+
+    let gb = get_game_balance();
+    assert!(pet.stats.hunger < gb.max_stat, E_PET_NOT_HUNGRY);
+    assert!(pet.game_data.coins >= gb.feed_coins_cost, E_NOT_ENOUGH_COINS);
+
+    pet.game_data.coins = pet.game_data.coins - gb.feed_coins_cost;
+    pet.game_data.experience = pet.game_data.experience + gb.feed_experience_gain;
+    pet.stats.hunger = if (pet.stats.hunger + gb.feed_hunger_gain > gb.max_stat) gb.max_stat else pet.stats.hunger + gb.feed_hunger_gain;
+
+    emit_action(pet, b"fed");
+}
+
+entry fun play_with_pet(capsule: &mut PetOwnerCapsule, pet_id: ID) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
+    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
+
+    let gb = get_game_balance();
+    assert!(pet.stats.energy >= gb.play_energy_loss, E_PET_TOO_TIRED);
+    assert!(pet.stats.hunger >= gb.play_hunger_loss, E_PET_TOO_HUNGRY);
+
+    pet.stats.energy = pet.stats.energy - gb.play_energy_loss;
+    pet.stats.hunger = pet.stats.hunger - gb.play_hunger_loss;
+    pet.game_data.experience = pet.game_data.experience + gb.play_experience_gain;
+    pet.stats.happiness = if (pet.stats.happiness + gb.play_happiness_gain > gb.max_stat) gb.max_stat else pet.stats.happiness + gb.play_happiness_gain;
+
+    emit_action(pet, b"played");
+}
+
+entry fun work_for_coins(capsule: &mut PetOwnerCapsule, pet_id: ID) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
+    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
+
+    let gb = get_game_balance();
+    assert!(pet.stats.energy >= gb.work_energy_loss, E_PET_TOO_TIRED);
+    assert!(pet.stats.happiness >= gb.work_happiness_loss, E_PET_NOT_HUNGRY);
+    assert!(pet.stats.hunger >= gb.work_hunger_loss, E_PET_TOO_HUNGRY);
+
+    pet.stats.energy = pet.stats.energy - gb.work_energy_loss;
+    pet.stats.happiness = pet.stats.happiness - gb.work_happiness_loss;
+    pet.stats.hunger = pet.stats.hunger - gb.work_hunger_loss;
+
+    pet.game_data.coins = pet.game_data.coins + gb.work_coins_gain;
+    pet.game_data.experience = pet.game_data.experience + gb.work_experience_gain;
+
+    emit_action(pet, b"worked");
+}
+
+entry fun let_pet_sleep(capsule: &mut PetOwnerCapsule, pet_id: ID, clock: &Clock) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
+    assert!(!is_sleeping(pet), E_PET_IS_ALREADY_ASLEEP);
+
+    let key = string::utf8(SLEEP_STARTED_AT_KEY);
+    dynamic_field::add(&mut pet.id, key, clock::timestamp_ms(clock));
+    pet.image_url = string::utf8(PET_SLEEP_IMAGE_URL);
+
+    emit_action(pet, b"started_sleeping");
+}
+
+entry fun wake_up_pet(capsule: &mut PetOwnerCapsule, pet_id: ID, clock: &Clock) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
+    assert!(is_sleeping(pet), E_PET_IS_ASLEEP);
+
+    let key = string::utf8(SLEEP_STARTED_AT_KEY);
+    let sleep_started_at: u64 = dynamic_field::remove<String, u64>(&mut pet.id, key);
+    let duration_ms = clock::timestamp_ms(clock) - sleep_started_at;
+
+    let gb = get_game_balance();
+    let energy_gained_u64 = duration_ms / gb.sleep_energy_gain_ms;
+    let energy_gained = if (energy_gained_u64 > (gb.max_stat as u64)) gb.max_stat else (energy_gained_u64 as u8);
+    pet.stats.energy = if (pet.stats.energy + energy_gained > gb.max_stat) gb.max_stat else pet.stats.energy + energy_gained;
+    
+    let happiness_lost_u64 = duration_ms / gb.sleep_happiness_loss_ms;
+    let happiness_lost = if (happiness_lost_u64 > (gb.max_stat as u64)) gb.max_stat else (happiness_lost_u64 as u8);
+    pet.stats.happiness = if (pet.stats.happiness > happiness_lost) pet.stats.happiness - happiness_lost else 0;
+   
+    let hunger_lost_u64 = duration_ms / gb.sleep_hunger_loss_ms;
+    let hunger_lost = if (hunger_lost_u64 > (gb.max_stat as u64)) gb.max_stat else (hunger_lost_u64 as u8);
+    pet.stats.hunger = if (pet.stats.hunger > hunger_lost) pet.stats.hunger - hunger_lost else 0;
+
+    update_pet_image(pet);
+    emit_action(pet, b"woke_up");
+}
+
+entry fun check_and_level_up(capsule: &mut PetOwnerCapsule, pet_id: ID) {
+    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
+    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
+
+    let gb = get_game_balance();
+    let required_exp = (pet.game_data.level as u64) * gb.exp_per_level;
+    assert!(pet.game_data.experience >= required_exp, E_NOT_ENOUGH_EXP);
+    pet.game_data.level = pet.game_data.level + 1;
+    pet.game_data.experience = pet.game_data.experience - required_exp;
+
+    update_pet_image(pet);
+    emit_action(pet, b"leveled_up");
+}
+
+// === Wardrobe Functions ===
 entry fun mint_accessory(capsule: &mut PetOwnerCapsule, pet_id: ID, ctx: &mut TxContext) {
     let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
     let sunglasses_key = string::utf8(SUNGLASSES_KEY);
     assert!(!dynamic_field::exists_(&pet.id, copy sunglasses_key), E_ACCESSORY_ALREADY_OWNED);
+
     let accessory = PetAccessory {
         id: object::new(ctx),
         name: string::utf8(b"cool glasses"),
         image_url: string::utf8(ACCESSORY_GLASSES_IMAGE_URL)
     };
+
     dynamic_field::add(&mut pet.id, sunglasses_key, accessory);
 }
+
 entry fun equip_accessory(capsule: &mut PetOwnerCapsule, pet_id: ID, item_name: String) {
     let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
-    assert!(!dynamic_field::exists_<String>(&pet.id, string::utf8(EQUIPPED_ITEM_KEY)), E_ITEM_ALREADY_EQUIPPED);
-    assert!(dynamic_field::exists_(&pet.id, copy item_name), E_ACCESSORY_NOT_IN_WARDROBE);
+
+    assert!(!dynamic_field::exists_(&pet.id, string::utf8(EQUIPPED_ITEM_KEY)), E_ITEM_ALREADY_EQUIPPED);
+    assert!(dynamic_field::exists_(&pet.id, item_name), E_ACCESSORY_NOT_IN_WARDROBE);
     
     let accessory: PetAccessory = dynamic_field::remove(&mut pet.id, item_name);
     dynamic_field::add(&mut pet.id, string::utf8(EQUIPPED_ITEM_KEY), accessory);
@@ -226,104 +359,21 @@ entry fun equip_accessory(capsule: &mut PetOwnerCapsule, pet_id: ID, item_name: 
 
 entry fun unequip_accessory(capsule: &mut PetOwnerCapsule, pet_id: ID) {
     let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
+
     assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
+
     let equipped_key = string::utf8(EQUIPPED_ITEM_KEY);
-    assert!(dynamic_field::exists_<String>(&pet.id, copy equipped_key), E_NO_ITEM_EQUIPPED);
+    assert!(dynamic_field::exists_(&pet.id, equipped_key), E_NO_ITEM_EQUIPPED);
 
     let accessory: PetAccessory = dynamic_field::remove(&mut pet.id, equipped_key);
-    
-    // PERBAIKAN: Selalu gunakan kunci konstan dari SUNGLASSES_KEY
-    // untuk menyimpan kembali item ke lemari, bukan accessory.name.
     let item_key = string::utf8(SUNGLASSES_KEY);
-    
     dynamic_field::add(&mut pet.id, item_key, accessory);
-    
+
     update_pet_image(pet);
     emit_action(pet, b"unequipped_item");
 }
 
-entry fun feed_pet(capsule: &mut PetOwnerCapsule, pet_id: ID) {
-    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
-    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
-    let gb = get_game_balance();
-    assert!(pet.stats.hunger < gb.max_stat, E_PET_NOT_HUNGRY);
-    assert!(pet.game_data.coins >= gb.feed_coins_cost, E_NOT_ENOUGH_COINS);
-    pet.game_data.coins = pet.game_data.coins - gb.feed_coins_cost;
-    pet.game_data.experience = pet.game_data.experience + gb.feed_experience_gain;
-    pet.stats.hunger = if (pet.stats.hunger + gb.feed_hunger_gain > gb.max_stat) gb.max_stat else pet.stats.hunger + gb.feed_hunger_gain;
-    emit_action(pet, b"fed");
-}
-
-entry fun play_with_pet(capsule: &mut PetOwnerCapsule, pet_id: ID) {
-    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
-    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
-    let gb = get_game_balance();
-    assert!(pet.stats.energy >= gb.play_energy_loss, E_PET_TOO_TIRED);
-    assert!(pet.stats.hunger >= gb.play_hunger_loss, E_PET_TOO_HUNGRY);
-    pet.stats.energy = pet.stats.energy - gb.play_energy_loss;
-    pet.stats.hunger = pet.stats.hunger - gb.play_hunger_loss;
-    pet.game_data.experience = pet.game_data.experience + gb.play_experience_gain;
-    pet.stats.happiness = if (pet.stats.happiness + gb.play_happiness_gain > gb.max_stat) gb.max_stat else pet.stats.happiness + gb.play_happiness_gain;
-    emit_action(pet, b"played");
-}
-
-entry fun work_for_coins(capsule: &mut PetOwnerCapsule, pet_id: ID) {
-    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
-    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
-    let gb = get_game_balance();
-    assert!(pet.stats.energy >= gb.work_energy_loss, E_PET_TOO_TIRED);
-    assert!(pet.stats.happiness >= gb.work_happiness_loss, E_PET_NOT_HUNGRY);
-    assert!(pet.stats.hunger >= gb.work_hunger_loss, E_PET_TOO_HUNGRY);
-    pet.stats.energy = if (pet.stats.energy >= gb.work_energy_loss) pet.stats.energy - gb.work_energy_loss else 0;
-    pet.stats.happiness = if (pet.stats.happiness >= gb.work_happiness_loss) pet.stats.happiness - gb.work_happiness_loss else 0;
-    pet.stats.hunger = if (pet.stats.hunger >= gb.work_hunger_loss) pet.stats.hunger - gb.work_hunger_loss else 0;
-    pet.game_data.coins = pet.game_data.coins + gb.work_coins_gain;
-    pet.game_data.experience = pet.game_data.experience + gb.work_experience_gain;
-    emit_action(pet, b"worked");
-}
-
-entry fun let_pet_sleep(capsule: &mut PetOwnerCapsule, pet_id: ID, clock: &Clock) {
-    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
-    assert!(!is_sleeping(pet), E_PET_IS_ALREADY_ASLEEP);
-    let key = string::utf8(SLEEP_STARTED_AT_KEY);
-    dynamic_field::add(&mut pet.id, key, clock::timestamp_ms(clock));
-    pet.image_url = string::utf8(PET_SLEEP_IMAGE_URL);
-    emit_action(pet, b"started_sleeping");
-}
-
-entry fun wake_up_pet(capsule: &mut PetOwnerCapsule, pet_id: ID, clock: &Clock) {
-    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
-    assert!(is_sleeping(pet), E_PET_IS_ASLEEP);
-    let key = string::utf8(SLEEP_STARTED_AT_KEY);
-    let sleep_started_at: u64 = dynamic_field::remove<String, u64>(&mut pet.id, key);
-    let duration_ms = clock::timestamp_ms(clock) - sleep_started_at;
-    let gb = get_game_balance();
-    let energy_gained_u64 = duration_ms / gb.sleep_energy_gain_ms;
-    let energy_gained = if (energy_gained_u64 > (gb.max_stat as u64)) gb.max_stat else (energy_gained_u64 as u8);
-    pet.stats.energy = if (pet.stats.energy + energy_gained > gb.max_stat) gb.max_stat else pet.stats.energy + energy_gained;
-    let happiness_lost_u64 = duration_ms / gb.sleep_happiness_loss_ms;
-    let happiness_lost = if (happiness_lost_u64 > (gb.max_stat as u64)) gb.max_stat else (happiness_lost_u64 as u8);
-    pet.stats.happiness = if (pet.stats.happiness > happiness_lost) pet.stats.happiness - happiness_lost else 0;
-    let hunger_lost_u64 = duration_ms / gb.sleep_hunger_loss_ms;
-    let hunger_lost = if (hunger_lost_u64 > (gb.max_stat as u64)) gb.max_stat else (hunger_lost_u64 as u8);
-    pet.stats.hunger = if (pet.stats.hunger > hunger_lost) pet.stats.hunger - hunger_lost else 0;
-    update_pet_image(pet);
-    emit_action(pet, b"woke_up");
-}
-
-entry fun check_and_level_up(capsule: &mut PetOwnerCapsule, pet_id: ID) {
-    let pet = dynamic_field::borrow_mut<ID, Pet>(&mut capsule.id, pet_id);
-    assert!(!is_sleeping(pet), E_PET_IS_ASLEEP);
-    let gb = get_game_balance();
-    let required_exp = (pet.game_data.level as u64) * gb.exp_per_level;
-    assert!(pet.game_data.experience >= required_exp, E_NOT_ENOUGH_EXP);
-    pet.game_data.level = pet.game_data.level + 1;
-    pet.game_data.experience = pet.game_data.experience - required_exp;
-    update_pet_image(pet);
-    emit_action(pet, b"leveled_up");
-}
-
-// --- FUNGSI HELPER & VIEW ---
+// === Helper & View Functions ===
 fun emit_action(pet: &Pet, action: vector<u8>) {
     event::emit(PetAction {
         pet_id: object::id(pet),
@@ -336,7 +386,7 @@ fun emit_action(pet: &Pet, action: vector<u8>) {
 
 fun update_pet_image(pet: &mut Pet) {
     let key = string::utf8(EQUIPPED_ITEM_KEY);
-    let has_accessory = dynamic_field::exists_<String>(&pet.id, key);
+    let has_accessory = dynamic_field::exists_(&pet.id, key);
     
     if (pet.game_data.level == 1) {
         if (has_accessory) {
@@ -359,6 +409,7 @@ fun update_pet_image(pet: &mut Pet) {
     };
 }
 
+public fun is_sleeping(pet: &Pet): bool { dynamic_field::exists_(&pet.id, string::utf8(SLEEP_STARTED_AT_KEY)) }
 public fun get_pet_name(pet: &Pet): String { pet.name }
 public fun get_pet_adopted_at(pet: &Pet): u64 { pet.adopted_at }
 public fun get_pet_coins(pet: &Pet): u64 { pet.game_data.coins }
@@ -367,8 +418,6 @@ public fun get_pet_level(pet: &Pet): u8 { pet.game_data.level }
 public fun get_pet_energy(pet: &Pet): u8 { pet.stats.energy }
 public fun get_pet_hunger(pet: &Pet): u8 { pet.stats.hunger }
 public fun get_pet_happiness(pet: &Pet): u8 { pet.stats.happiness }
-public fun is_sleeping(pet: &Pet): bool { dynamic_field::exists_<String>(&pet.id, string::utf8(SLEEP_STARTED_AT_KEY)) }
-
 public fun get_pet_wardrobe_items(capsule: &PetOwnerCapsule, pet_id: ID): vector<String> {
     let pet = dynamic_field::borrow<ID, Pet>(&capsule.id, pet_id);
     let mut items = vector::empty<String>();
