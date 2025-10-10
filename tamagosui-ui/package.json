@@ -1,9 +1,4 @@
 {
-  "pnpm": {
-    "overrides": {
-      "@mysten/sui": "1.38.0"
-    }
-  },
   "name": "tamagosui",
   "private": true,
   "version": "0.0.1",
@@ -16,11 +11,12 @@
   },
   "dependencies": {
     "@mysten/bcs": "^1.8.0",
-    "@mysten/dapp-kit": "^0.17.7",
-    "@mysten/sui": "^1.37.6",
+    "@mysten/dapp-kit": "0.19.0",
+    "@mysten/sui": "1.39.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-progress": "^1.1.7",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
@@ -34,6 +30,7 @@
     "next-themes": "^0.4.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.8.2",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",

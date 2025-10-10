@@ -1,55 +1,77 @@
-import { useSignAndExecuteTransaction } from "@mysten/dapp-kit";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+// src/hooks/useMutateAdoptPet.ts
+
+import {
+  useSignAndExecuteTransaction,
+  useCurrentAccount,
+} from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
-
-import { CLOCK_ID, MODULE_NAME, PACKAGE_ID } from "@/constants/contract";
+import { SUI_CLOCK_OBJECT_ID } from "@mysten/sui/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { PACKAGE_ID } from "@/constants/contract";
 import { queryKeyUserPets } from "./useQueryUserPets";
+import { toast } from "react-hot-toast";
 
-type AdoptPetParams = {
-  name: string;
+interface AdoptPetParams {
+  petName: string;
+  isFirstPet: boolean;
   capsuleId?: string;
-};
+  onSuccess?: () => void;
+}
 
 export function useMutateAdoptPet() {
+  const { mutate: signAndExecute, isPending } = useSignAndExecuteTransaction();
+  const account = useCurrentAccount();
   const queryClient = useQueryClient();
-  const { mutateAsync: signAndExecuteTransaction } =
-    useSignAndExecuteTransaction();
 
-  return useMutation({
-    mutationFn: async ({ name, capsuleId }: AdoptPetParams) => {
-      const tx = new Transaction();
+  const adopt = ({
+    petName,
+    isFirstPet,
+    capsuleId,
+    onSuccess,
+  }: AdoptPetParams) => {
+    if (!petName.trim()) {
+      toast.error("Please give your new pet a name!");
+      return;
+    }
+    if (!isFirstPet && !capsuleId) {
+      toast.error("Capsule ID is missing for adopting a new pet.");
+      return;
+    }
 
-      if (capsuleId) {
-        // Alur untuk adopsi Pet KEDUA dan seterusnya (Tidak berubah)
-        tx.moveCall({
-          target: `${PACKAGE_ID}::${MODULE_NAME}::adopt_pet`,
-          arguments: [
-            tx.object(capsuleId),
-            tx.pure.string(name),
-            tx.object(CLOCK_ID),
-          ],
-        });
-      } else {
-        // Alur untuk adopsi Pet PERTAMA (Sekarang sudah SINKRON)
-        // Kita memanggil satu fungsi yang sudah diperbaiki di smart contract.
-        tx.moveCall({
-          target: `${PACKAGE_ID}::${MODULE_NAME}::create_pet_owner_capsule`,
-          arguments: [
-            tx.pure.string(name), // <-- Argumen pertama: name
-            tx.object(CLOCK_ID), // <-- Argumen kedua: clock
-          ],
-        });
+    const tx = new Transaction();
+
+    if (isFirstPet) {
+      tx.moveCall({
+        target: `${PACKAGE_ID}::tamagosui::create_pet_owner_capsule`,
+        arguments: [tx.pure.string(petName), tx.object(SUI_CLOCK_OBJECT_ID)],
+      });
+    } else {
+      tx.moveCall({
+        target: `${PACKAGE_ID}::tamagosui::adopt_pet`,
+        arguments: [
+          tx.object(capsuleId!),
+          tx.pure.string(petName),
+          tx.object(SUI_CLOCK_OBJECT_ID),
+        ],
+      });
+    }
+
+    signAndExecute(
+      { transaction: tx },
+      {
+        onSuccess: (result) => {
+          toast.success(`Welcome, ${petName}!`);
+          queryClient.invalidateQueries({
+            queryKey: queryKeyUserPets(account?.address),
+          });
+          if (onSuccess) onSuccess();
+        },
+        onError: (error) => {
+          toast.error(`Adoption failed: ${error.message}`);
+        },
       }
+    );
+  };
 
-      return signAndExecuteTransaction({
-        transaction: tx,
-        chain: "sui:testnet",
-      });
-    },
-    onSuccess: () => {
-      return queryClient.invalidateQueries({
-        queryKey: queryKeyUserPets(),
-      });
-    },
-  });
+  return { adopt, isPending };
 }

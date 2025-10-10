@@ -118,3 +118,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  /* Class Glassmorphism yang bisa digunakan berulang kali */
+  .glass-style {
+    /* Menggunakan nilai-nilai yang sudah Anda tentukan */
+    @apply bg-black/3 backdrop-blur-xl 
+           border-4 border-white/40
+           rounded-4xl;
+  }
+}

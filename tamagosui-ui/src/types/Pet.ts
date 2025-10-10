@@ -1,59 +1,36 @@
-// TAMBAHAN: Tipe untuk "kapsul" yang dimiliki oleh user.
-// Ini adalah tipe "bersih" yang akan kita gunakan di seluruh aplikasi.
-export type PetOwnerCapsule = {
-  id: string;
-  petCount: number; // Menggunakan camelCase untuk konsistensi di JS/TS
-};
+// src/types/Pet.ts
 
-// TAMBAHAN: Tipe untuk data mentah dari RPC call untuk PetOwnerCapsule.
-export type RawPetOwnerCapsule = {
-  id: { id: string };
-  pet_count: string; // RPC biasanya mengembalikan u64 sebagai string
-};
-
-type PetStructGameData = {
-  coins: number;
-  experience: number;
-  level: number;
-};
-
-type PetStructStats = {
+export interface PetStats {
   energy: number;
   happiness: number;
   hunger: number;
-};
+}
 
-export type PetStruct = {
+export interface PetGameData {
+  coins: string;
+  experience: string;
+  level: number;
+}
+
+export interface Pet {
   id: string;
   name: string;
-  adopted_at: number;
-  image_url: string;
-  stats: PetStructStats;
-  game_data: PetStructGameData;
-
-  // Dynamic Fields
+  adoptedAt: string;
+  imageUrl: string;
+  stats: PetStats;
+  gameData: PetGameData;
   isSleeping: boolean;
-};
+  hasSunglasses: boolean;
+  isSunglassesEquipped: boolean;
+}
 
-export type PetAccessoryStruct = {
-  id: { id: string };
+export interface PetOwnerCapsule {
+  id: string;
+  petCount: number;
+}
+
+export interface PetAccessory {
+  id: string;
   name: string;
-  image_url: string;
-};
-
-export type SuiWrappedDynamicField<T> = {
-  id: { id: string };
-  name: any;
-  value: {
-    fields: T;
-  };
-};
-
-export type RawPetStructFields = {
-  id: { id: string };
-  name: string;
-  image_url: string;
-  adopted_at: string;
-  stats: { fields: { energy: number; happiness: number; hunger: number } };
-  game_data: { fields: { coins: number; experience: number; level: number } };
-};
+  imageUrl: string;
+}

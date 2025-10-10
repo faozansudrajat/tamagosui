@@ -1,79 +1,74 @@
 import { useState, useEffect } from "react";
-import { useCurrentAccount } from "@mysten/dapp-kit";
-import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-
-// Komponen & Hook
 import Header from "@/components/Header";
+import { useCurrentAccount } from "@mysten/dapp-kit";
+import backgroundImage from "@/assets/bg.png";
+
+import { useQueryUserPets } from "@/hooks/useQueryUserPets";
+import { useMutatePetAction } from "@/hooks/useMutatePetAction";
+
 import AdoptComponent from "@/features/adoption/AdoptComponent";
 import PetComponent from "@/features/pet-dashboard/PetComponent";
 import { PetSidebar } from "@/features/adoption/PetSidebar";
-import { useQueryUserPets, queryKeyUserPets } from "@/hooks/useQueryUserPets";
-import { useMutateBurnPet } from "@/hooks/useMutateBurnPet";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { WardrobeComponent } from "@/features/wardrobe/WardrobeComponent";
+
+// 1. TAMBAHKAN "check_and_level_up" DI SINI
+type PetAction =
+  | "feed_pet"
+  | "play_with_pet"
+  | "work_for_coins"
+  | "let_pet_sleep"
+  | "wake_up_pet"
+  | "mint_accessory"
+  | "equip_accessory"
+  | "unequip_accessory"
+  | "check_and_level_up";
 
 export default function HomePage() {
   const currentAccount = useCurrentAccount();
-  const queryClient = useQueryClient();
   const { data, isPending: isUserPetsLoading } = useQueryUserPets();
   const { capsule, pets } = data || { capsule: null, pets: [] };
+  const { execute: performAction, isPending: isActionPending } =
+    useMutatePetAction();
 
   const [activePetId, setActivePetId] = useState<string | null>(null);
   const [isAdopting, setIsAdopting] = useState(false);
-  const { mutate: burnPet, isPending: isBurning } = useMutateBurnPet();
 
-  // --- PERBAIKAN 2: Buat useEffect menjadi lebih "pintar" ---
+  // --- DEFINISIKAN PENDING ACTION STATE DI SINI ---
+  const [pendingAction, setPendingAction] = useState<PetAction | null>(null);
+
+  // Efek untuk me-reset pendingAction setelah transaksi selesai
   useEffect(() => {
-    // Cek apakah Pet yang aktif saat ini masih ada di dalam daftar Pet yang baru.
-    const activePetStillExists = pets.some((p) => p.id === activePetId);
+    if (!isActionPending) {
+      setPendingAction(null);
+    }
+  }, [isActionPending]);
 
-    if (activePetId && activePetStillExists) {
-      // Jika Pet aktif masih ada, tidak perlu melakukan apa-apa.
+  const handleAction = (action: PetAction, extraArgs?: any[]) => {
+    if (!capsule || !activePetId) return;
+    // Set aksi yang sedang berjalan
+    setPendingAction(action);
+    performAction({
+      action,
+      capsuleId: capsule.id,
+      petId: activePetId,
+      extraArgs,
+    });
+  };
+
+  useEffect(() => {
+    const activePetExists = pets.some((p) => p.id === activePetId);
+    if (activePetExists) {
       return;
     }
 
-    // Jika Pet aktif sudah tidak ada (karena dihapus) atau belum ada yang dipilih,
-    // pilih Pet pertama dari daftar yang tersisa.
-    if (pets && pets.length > 0) {
+    if (pets.length > 0) {
       setActivePetId(pets[0].id);
     } else {
-      // Jika tidak ada Pet tersisa, kosongkan pilihan.
       setActivePetId(null);
     }
-  }, [pets, activePetId]); // <-- Jalankan efek ini setiap kali daftar `pets` berubah.
+  }, [pets, activePetId]);
 
-  const selectedPet = pets.find((p) => p.id === activePetId);
-
-  // --- PERBAIKAN 1: Sederhanakan onSuccess di dalam handler ---
-  const handlePetBurned = (petToBurnId: string) => {
-    if (!capsule) return;
-
-    burnPet(
-      { capsuleId: capsule.id, petId: petToBurnId },
-      {
-        onSuccess: () => {
-          toast.success("Your pet has been set free.");
-          // Tugasnya sekarang hanya meminta data baru.
-          // useEffect di atas akan menangani sisanya setelah data tiba.
-          queryClient.invalidateQueries({
-            queryKey: queryKeyUserPets(currentAccount?.address),
-          });
-        },
-        onError: (error) => {
-          toast.error("Failed to burn pet: " + error.message);
-        },
-      }
-    );
-  };
-
-  const handleSelectPet = (petId: string) => {
-    setActivePetId(petId);
+  const handleAdopted = () => {
     setIsAdopting(false);
   };
 
@@ -81,36 +76,50 @@ export default function HomePage() {
     setIsAdopting(true);
   };
 
-  const handleAdopted = () => {
-    setIsAdopting(false);
+  const handleSelectPet = (petId: string) => {
+    setActivePetId(petId);
   };
 
-  const handleCancelAdopt = () => {
-    setIsAdopting(false);
-  };
+  const selectedPet = pets.find((p) => p.id === activePetId) || null;
 
   const renderContent = () => {
-    if (isUserPetsLoading) {
+    const GLASS_CONTAINER_CLASSES =
+      "glass-style w-120 max_w-md p-12 flex flex-col items-center";
+
+    if (!currentAccount) {
       return (
-        <div className="flex h-full items-center justify-center">
-          <div className="border-primary bg-background border-4 p-8 text-center shadow-[8px_8px_0px_#000]">
-            <h2 className="text-4xl uppercase">Loading Your Pets...</h2>
-          </div>
+        <div className={GLASS_CONTAINER_CLASSES}>
+          <h2 className="text-3xl font-bold text-gray-700 mb-6 drop-shadow-md">
+            Connect your wallet 💳
+          </h2>
+          <p className="mt-4 text-sm text-gray-700 drop-shadow-sm">
+            Unlock the Tamagosui experience.
+          </p>
+        </div>
+      );
+    }
+
+    if (isUserPetsLoading || !data) {
+      return (
+        <div className="glass-style w-120 max_w-md text-center p-12">
+          <h2 className="text-3xl font-bold text-gray-700">
+            Loading Pet Data...
+          </h2>
         </div>
       );
     }
 
     if (!capsule) {
       return (
-        <div className="flex h-full items-center justify-center">
-          <AdoptComponent isFirstPet={true} onAdopted={() => {}} />
+        <div className="w-120 max-w-md">
+          <AdoptComponent isFirstPet={true} onAdopted={handleAdopted} />
         </div>
       );
     }
 
     return (
-      <div className="grid w-full max-w-6xl grid-cols-1 gap-8 md:grid-cols-4">
-        <div className="md:col-span-1">
+      <div className="grid w-full max_w-7xl grid-cols-1 lg:grid-cols-5 gap-8">
+        <div className="lg:col-span-1">
           <PetSidebar
             pets={pets}
             activePetId={activePetId}
@@ -118,51 +127,60 @@ export default function HomePage() {
             onAdoptNew={handleAdoptNew}
           />
         </div>
-        <div className="md:col-span-3">
+
+        <div className="lg:col-span-3">
           {selectedPet ? (
             <PetComponent
               pet={selectedPet}
-              onBack={() => {}}
-              onPetBurned={() => handlePetBurned(selectedPet.id)}
-              isBurningPet={isBurning}
+              onAction={handleAction}
+              isActionPending={isActionPending}
+              pendingAction={pendingAction}
             />
           ) : (
-            <div className="border-primary/50 bg-background/50 flex h-full items-center justify-center rounded-lg border-4 border-dashed p-8 text-center">
-              <p className="text-xl text-gray-500">
-                Select a pet from the left, <br /> or adopt a new one!
+            <div className="glass-style p-12 text-center flex flex-col justify-center items-center h-full">
+              <h3 className="text-2xl font-bold text-gray-700">No Pets Yet!</h3>
+              <p className="mt-2 text-gray-600">
+                Click '+ Adopt New Pet' in the sidebar to get your first friend.
               </p>
             </div>
           )}
+        </div>
+
+        <div className="lg:col-span-1">
+          <WardrobeComponent
+            pet={selectedPet}
+            onAction={handleAction}
+            isActionPending={isActionPending}
+            pendingAction={pendingAction}
+          />
         </div>
       </div>
     );
   };
 
   return (
-    <div className="bg-secondary flex min-h-screen flex-col">
+    <div
+      className="min-h-screen flex flex-col"
+      style={{
+        backgroundImage: `url(${backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
       <Header />
-      <main className="flex flex-grow items-center justify-center p-4 pt-10 md:p-8 md:pt-10">
-        {!currentAccount ? (
-          <div className="border-primary bg-background border-4 p-8 text-center shadow-[8px_8px_0px_#000]">
-            <h2 className="text-4xl uppercase">Please Connect Wallet</h2>
-          </div>
-        ) : (
-          renderContent()
-        )}
+
+      <main className="flex flex-grow items-center justify-center p-8">
+        {renderContent()}
       </main>
-      <Dialog open={isAdopting} onOpenChange={setIsAdopting}>
-        <DialogContent className="w-full max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle className="text-center text-3xl">
-              Adopt a New Pet
-            </DialogTitle>
-            <DialogDescription className="text-center">
-              Expand your family!
-            </DialogDescription>
-          </DialogHeader>
-          <AdoptComponent isFirstPet={false} onAdopted={handleAdopted} />
-        </DialogContent>
-      </Dialog>
+
+      {isAdopting && capsule && (
+        <AdoptComponent
+          isFirstPet={false}
+          onAdopted={handleAdopted}
+          isModal={true}
+          capsuleId={capsule.id}
+        />
+      )}
     </div>
   );
 }
