@@ -59,7 +59,7 @@ export function useMutateAdoptPet() {
     signAndExecute(
       { transaction: tx },
       {
-        onSuccess: (result) => {
+        onSuccess: () => {
           toast.success(`Welcome, ${petName}!`);
           queryClient.invalidateQueries({
             queryKey: queryKeyUserPets(account?.address),

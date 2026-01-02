@@ -1,4 +1,3 @@
-import React from "react";
 import { Pet } from "@/types/Pet"; // Mengimpor tipe Pet yang sudah bersih
 
 interface PetSidebarProps {
